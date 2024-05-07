@@ -1,9 +1,11 @@
 # Build a WebAssembly benchmark for parallel compression and decompression (eventually).
 PIGZ_WASM=pigz/pigz.wasm
+PIGZ_WASM_AOT=pigz/pigz.aot
 ZLIB_WASM=zlib/libz.wasm.a
 WASI_SDK_CC=wasi-sdk/bin/clang
 WASMTIME=wasmtime/src/target/release/wasmtime
 WAMR=wasm-micro-runtime/src/build/iwasm
+WAMR_WAMRC=wasm-micro-runtime/src/wamr-compiler/build/wamrc
 PLATFORM?=linux
 
 # Compile and link the various WebAssembly objects and the Wasmtime engine to run them. Important
@@ -15,13 +17,15 @@ PLATFORM?=linux
 build: $(PIGZ_WASM) $(WASMTIME)
 $(PIGZ_WASM): $(WASI_SDK_CC)
 	make -C pigz
+$(PIGZ_WASM_AOT): $(WASI_SDK_CC) $(WAMR_WAMRC)
+	make -C pigz pigz.aot
 $(ZLIB_WASM): $(WASI_SDK_CC)
 	make -C zlib
 $(WASI_SDK_CC):
 	make -C wasi-sdk PLATFORM=$(PLATFORM)
 $(WASMTIME):
 	make -C wasmtime
-$(WAMR):
+$(WAMR) $(WAMR_WAMRC):
 	make -C wasm-micro-runtime PLATFORM=$(PLATFORM)
 
 clean:
@@ -46,6 +50,12 @@ benchmark.wamr: random.bin $(PIGZ_WASM) $(WAMR)
 	@rm -f random.bin.gz
 	time $(WAMR) --max-threads=$(shell echo ${NUM_THREADS}+1 | bc) --dir=. $(PIGZ_WASM) -p $(NUM_THREADS) /random.bin
 	@gzip --decompress --stdout random.bin.gz >/dev/null
+benchmark.wamr.aot: random.bin $(PIGZ_WASM_AOT) $(WAMR)
+	@rm -f random.bin.gz
+	time $(WAMR) --max-threads=$(shell echo ${NUM_THREADS}+1 | bc) --dir=. $(PIGZ_WASM_AOT) -p $(NUM_THREADS) /random.bin
+	@gzip --decompress --stdout random.bin.gz >/dev/null
+	stat --format="Size: %s bytes" $(PIGZ_WASM_AOT)
+
 random.bin: random.original.bin
 	@cp $< $@
 random.original.bin:

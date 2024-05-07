@@ -3,6 +3,9 @@
 # Point to the retrieved version of wasi-sdk.
 WASI_SDK_DIR ?= ../wasi-sdk
 
+# Get the compiled WAMRC executable.
+WAMR_WAMRC ?= ../wasm-micro-runtime/src/wamr-compiler/build/wamrc
+
 # Allow $(CC) to be set from the command line; ?= doesn't work for CC because make has a default
 # value for it. Note the appended sysroot; see https://github.com/WebAssembly/wasi-sdk/#use.
 ifeq ($(origin CC), default)
@@ -11,6 +14,8 @@ endif
 
 # Flags from the original Makefile.
 CFLAGS = -O3 -Wall -Wextra -Wno-unknown-pragmas -Wcast-qual
+
+WAMR_WAMRC_FLAGS = --opt-level=3 --size-level=3
 
 # Include zlib's header files from the adjoining directory. Though a Linux system likely has zlib
 # installed, since we already have the zlib source available (and to avoid incompatibility), we use
@@ -37,6 +42,9 @@ ZLIB_ARCHIVE=../zlib/libz.wasm.a
 pigz.wasm: pigz.wasm.o yarn.wasm.o $(ZOPFLI_OBJS) $(ZLIB_ARCHIVE)
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
 
+pigz.aot: pigz.wasm
+	$(WAMR_WAMRC) $(WAMR_WAMRC_FLAGS) -o $@ pigz.wasm
+
 # Note that we use a sibling project for a WebAssembly build of zlib.
 $(ZLIB_ARCHIVE):
 	make -C ../zlib
@@ -54,6 +62,7 @@ pigz.c: $(SRC)pigz.c patches/remove-signals.diff patches/use-try-but-fail.diff
 	cp $< $@
 	git apply --verbose --directory pigz --recount patches/remove-signals.diff \
 		patches/use-try-but-fail.diff patches/remove-chown-chmod.diff
+
 
 # The yarn Wasm object is also modified slightly: we remove the single use of
 # `pthread_attr_setdetachstate` (likely redundant anyways) until it is enabled in wasi-libc (TODO).
@@ -100,4 +109,4 @@ pigz:
 	cp src/pigz $@
 
 clean:
-	rm -rf *.o *.c *.wasm pigz
+	rm -rf *.o *.c *.wasm *.aot pigz
